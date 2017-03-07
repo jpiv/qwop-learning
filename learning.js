@@ -1,31 +1,36 @@
 class Synapse {
-	constructor(parentNeuron, childNeuron) {
-		this.w = Math.random() * 2 - 1;
+	constructor(parentNeuron, childNeuron, lossFn, lossP) {
+		this.w = Math.random() - 0.5;
 		this.wDelta = 0;
 		this.parent = parentNeuron;
 		this.child = childNeuron;
-		log(this.parent.id, this.child.id, 'weight', this.w);
 		this.gradient = 0;
+		this._loss = lossFn;
+		this._lossP = lossP
+		this.id = this.parent.id + this.child.id;
+		log(this.id, 'weight', this.w);
 	}
 
 	impulse(value) {
 		this.child.inputImpulse(value * this.w);
 	}
 
-	backpropagateError(error) {
-		this.parent.updateError(error * this.w);
+	backpropagateError(nodeError) {
+		const error = this._loss(nodeError, this.w);
+		this.gradient = this._lossP(nodeError, this.w);
+		this.parent.updateError(error);
 	}
 
 	gradientDescent(learnRate, momentum) {
-		this.gradient = this.parent.output * this.child.error;
+		log(this.id, 'parentOut', this.parent.output, 'cError', this.child.error)
 		this.wDelta = -learnRate * this.gradient + momentum * this.wDelta;
 		this.w += this.wDelta;
-		log(this.parent.id, this.child.id, 'gradient', this.gradient, 'new weight', this.w);
+		log(this.id, 'gradient', this.gradient, 'new weight', this.w);
 	}
 }
 
 class Neuron {
-	constructor(activationFn, activationPrime, id) {
+	constructor(activationFn, activationPrime, lossFn, lossP, id) {
 		this.id = id || 'N0';
 		this.parentSynapses = [];
 		// Output synapses
@@ -35,11 +40,12 @@ class Neuron {
 		this.output = 1;
 		this._activation = activationFn;
 		this._activationP = activationPrime;
-		this._errorSum = 0;
+		this._loss = lossFn;
+		this._lossP = lossP;
 	}
 
 	connect(neuron) {
-		const syn = new Synapse(this, neuron);
+		const syn = new Synapse(this, neuron, this._loss, this._lossP);
 		this.synapses.push(syn);
 		neuron._connectParent(syn);
 	}
@@ -47,6 +53,7 @@ class Neuron {
 	reset() {
 		this.sum = 0;
 		this.output = 1;
+		this.error = 0;
 	}
 
 	inputImpulse(value, activate=true) {
@@ -62,12 +69,11 @@ class Neuron {
 	}
 
 	updateError(error) {
-		this._errorSum += error;
-		this.error = this._activationP(this.sum) * this._errorSum;
+		this.error += error;
 	}
 
 	backpropagateError() {
-		log(this.id, 'error', this._errorSum, this.error)
+		log(this.id, 'error', this.error)
 		this.parentSynapses.forEach(syn => syn.backpropagateError(this.error));
 	}
 
@@ -81,10 +87,12 @@ class Neuron {
 }
 
 class Network {
-	constructor(layers, activationFn, activationFnDerivative, bias=true) {
+	constructor(layers, activationFn, activationFnDerivative, lossFn, lossP, bias=true) {
 		this.bias = bias;
 		this.activationFn = activationFn;
 		this.activationFnDerivative = activationFnDerivative;
+		this._loss = lossFn;
+		this._lossP = lossP;
 		this.network = this._constructNetwork(layers);
 		this.inputNeurons = bias ? this.network[0].slice(0, -1)
 			: this.nework[0];
@@ -119,10 +127,9 @@ class Network {
 	_backpropagate(trainingData) {
 		const { learnRate, momentum, set } = trainingData;
 		const errorRates = [];
-		console.log(this.biasNeurons)
 		set.forEach(item => {
 			let actual = this.sendInput(item.inputs)
-			let error = actual - item.ideal;
+			let error = this._loss(actual - item.ideal, 1);
 			this._networkAction((neuron, layer, index) => {
 				if(this.outputNeurons.indexOf(neuron) === index && layer === this.network.length - 1) {
 					neuron.updateError(error);
@@ -160,8 +167,8 @@ class Network {
 
 	_constructNetwork(layers) {
 		const network = layers.map((l, i) => {
-			const group = Array.from(Array(l).keys(), (j) => new Neuron(this.activationFn, this.activationFnDerivative, this._id(i, j)));
-			this.bias && i !== layers.length - 1 && group.push(new Neuron(this.activationFn, this.activationFnDerivative, this._id(i, group.length)));
+			const group = Array.from(Array(l).keys(), (j) => new Neuron(this.activationFn, this.activationFnDerivative, this._loss, this._lossP, this._id(i, j)));
+			this.bias && i !== layers.length - 1 && group.push(new Neuron(this.activationFn, this.activationFnDerivative, this._loss, this._lossP, this._id(i, group.length)));
 			return group;
 		});
 
@@ -185,21 +192,32 @@ class Network {
 	}
 }
 
-const layers = [2, 3, 2, 1];
-const activate = x => {
+const layers = [2, 4, 1];
+const sigmoid = x => {
 	return 1 / (1 + Math.exp(-x));
 };
-const activatePrime = x => {
-	return activate(x) * (1 - activate(x));
+const sigmoidPrime = x => {
+	return sigmoid(x) * (1 - sigmoid(x));
+};
+const linear = x => {
+	return x;
+};
+const linearPrime = x => 1;
+const loss = (e, w) => {
+	return Math.pow(e * w, 2);
+};
+const lossP = (e, w) => {
+	return 2 * e * w * e;	
 };
 const makeTrainingSet = size => {
 	const samples = (function* (i) {
 		while(1) {
-			for(let i = 0; i < 2; i++) {
-				for(let j = 0; j < 2; j++) {
-					yield [i, j];
-				}
-			}
+			// for(let i = 0; i < 2; i++) {
+			// 	for(let j = 0; j < 2; j++) {
+			// 		yield [i, j];
+			// 	}
+			// }
+			yield [Math.round(Math.random()), Math.round(Math.random())]
 		}
 	})();
 	return Array.from(Array(size).keys(), i => {
@@ -209,21 +227,21 @@ const makeTrainingSet = size => {
 	}); 
 };
 var debug = false;
-const nets = Array.from(Array(1).keys(), () => new Network(layers, activate, activatePrime));
+const nets = Array.from(Array(1).keys(), () => new Network(layers, sigmoid, sigmoidPrime, loss, lossP));
 const set = makeTrainingSet(100000);
 // set.forEach(i => console.log(i))
 var best = {error: 14};
 nets.forEach((net, i) => { 
 	let error = net.train({
-		learnRate: 0.001,
-		momentum: 0.1,
+		learnRate: 0.0003,
+		momentum: 0,	
 		set
 	});
 	const out = net.sendInput([0, 0]).toFixed(2);
 	console.log('#' + (Number(i) + 1) + '/' + nets.length, 'in: 0, 0', 'out:', out, (error * 100).toFixed(2) + '%')
 	best = error < best.error ? {
 		'in': '00',
-		error: 0,
+		error,
 		out,
 		net
 	} : best;
