@@ -90,6 +90,7 @@ class Network {
 		this.inputNeurons = bias ? this.network[0].slice(0, -1)
 			: this.nework[0];
 		this.outputNeurons = this.network[this.network.length - 1];
+		this.biasNeurons = bias ? this.network.slice(0, -1).map(layer => layer[layer.length - 1]) : [];
 	}
 
 	reset() {
@@ -119,6 +120,7 @@ class Network {
 	_backpropagate(trainingData) {
 		const { learnRate, momentum, set } = trainingData;
 		const errorRates = [];
+		console.log(this.biasNeurons)
 		set.forEach(item => {
 			let actual = this.sendInput(item.inputs)
 			let error = actual - item.ideal;
@@ -129,6 +131,7 @@ class Network {
 				neuron.backpropagateError();
 			}, true);
 			this.inputNeurons.forEach(n => n.gradientDescent(learnRate, momentum));
+			this.biasNeurons.forEach(n => n.gradientDescent(learnRate, momentum))
 			errorRates.push(error);
 			console.log((error.toFixed(2) * 100) + '%')
 			this.reset();
@@ -209,13 +212,13 @@ const makeTrainingSet = size => {
 };
 var debug = false;
 const nets = Array.from(Array(1).keys(), () => new Network(layers, activate, activatePrime));
-const set = makeTrainingSet(3000000);
+const set = makeTrainingSet(10000);
 // set.forEach(i => console.log(i))
 var best = {error: 14};
 nets.forEach((net, i) => { 
 	let error = net.train({
-		learnRate: 0.000000000001,
-		momentum: 0.6,
+		learnRate: 0.01,
+		momentum: 0.3,
 		set
 	});
 	const out = net.sendInput([0, 0]).toFixed(2);
