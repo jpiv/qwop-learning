@@ -21,7 +21,6 @@ class Synapse {
 		this.wDelta = -learnRate * this.gradient + momentum * this.wDelta;
 		this.w += this.wDelta;
 		log(this.parent.id, this.child.id, 'gradient', this.gradient, 'new weight', this.w);
-		this.child.gradientDescent(learnRate, momentum);
 	}
 }
 
@@ -130,8 +129,7 @@ class Network {
 				}
 				neuron.backpropagateError();
 			}, true);
-			this.inputNeurons.forEach(n => n.gradientDescent(learnRate, momentum));
-			this.biasNeurons.forEach(n => n.gradientDescent(learnRate, momentum))
+			this._networkAction(n => n.gradientDescent(learnRate, momentum));
 			errorRates.push(error);
 			console.log((error.toFixed(2) * 100) + '%')
 			this.reset();
@@ -212,13 +210,13 @@ const makeTrainingSet = size => {
 };
 var debug = false;
 const nets = Array.from(Array(1).keys(), () => new Network(layers, activate, activatePrime));
-const set = makeTrainingSet(10000);
+const set = makeTrainingSet(100000);
 // set.forEach(i => console.log(i))
 var best = {error: 14};
 nets.forEach((net, i) => { 
 	let error = net.train({
-		learnRate: 0.01,
-		momentum: 0.3,
+		learnRate: 0.001,
+		momentum: 0.1,
 		set
 	});
 	const out = net.sendInput([0, 0]).toFixed(2);
