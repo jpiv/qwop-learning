@@ -209,7 +209,7 @@ class Network {
 	}
 }
 
-const layers = [2, 2, 1];
+const layers = [2, 2, 3, 1];
 const sigmoid = x => {
 	return 1 / (1 + Math.exp(-x));
 };
