@@ -16,9 +16,13 @@ class Synapse {
 	}
 
 	backpropagateError(nodeError) {
-		const error = this._loss(nodeError, this.w);
-		this.gradient = this._lossP(nodeError, this.w);
-		this.parent.updateError(error);
+		// console.log(this.parent.output * this.w)
+		// const er = this.parent.output - (this.child.output - this.child.error);
+		// const error = this._loss(this.child.error, 1);
+		const er = this.child.error * this.w
+		// console.log(this.parent.output)
+		this.gradient = this._lossP(er, this.w, this.parent.sum, this.parent.output);
+		this.parent.updateError(er);
 	}
 
 	gradientDescent(learnRate, momentum) {
@@ -69,11 +73,12 @@ class Neuron {
 	}
 
 	updateError(error) {
+		log(this.id, 'update error', error, this.error)
 		this.error += error;
 	}
 
 	backpropagateError() {
-		log(this.id, 'error', this.error)
+		log(this.id, 'backprop error', this.error)
 		this.parentSynapses.forEach(syn => syn.backpropagateError(this.error));
 	}
 
@@ -116,6 +121,7 @@ class Network {
 		} else {
 			console.error('Invalid number of inputs');
 		}
+		console.log(output)
 		return output;
 	}
 
@@ -192,7 +198,7 @@ class Network {
 	}
 }
 
-const layers = [2, 4, 1];
+const layers = [2, 2, 1];
 const sigmoid = x => {
 	return 1 / (1 + Math.exp(-x));
 };
@@ -204,10 +210,11 @@ const linear = x => {
 };
 const linearPrime = x => 1;
 const loss = (e, w) => {
-	return Math.pow(e * w, 2);
+	return 0.5 * Math.pow(e * w, 2);
 };
-const lossP = (e, w) => {
-	return 2 * e * w * e;	
+const lossP = (e, w, s, o) => {
+	return e * sigmoidPrime(s) * o
+	// return e * w * e;	
 };
 const makeTrainingSet = size => {
 	const samples = (function* (i) {
@@ -218,6 +225,7 @@ const makeTrainingSet = size => {
 			// 	}
 			// }
 			yield [Math.round(Math.random()), Math.round(Math.random())]
+			// yield [0, 0]
 		}
 	})();
 	return Array.from(Array(size).keys(), i => {
@@ -226,15 +234,15 @@ const makeTrainingSet = size => {
 		return { ideal, inputs };
 	}); 
 };
-var debug = false;
+var debug = true;
 const nets = Array.from(Array(1).keys(), () => new Network(layers, sigmoid, sigmoidPrime, loss, lossP));
-const set = makeTrainingSet(100000);
+const set = makeTrainingSet(4000);
 // set.forEach(i => console.log(i))
 var best = {error: 14};
 nets.forEach((net, i) => { 
 	let error = net.train({
-		learnRate: 0.0003,
-		momentum: 0,	
+		learnRate: 0.01,
+		momentum: 0.8,
 		set
 	});
 	const out = net.sendInput([0, 0]).toFixed(2);
