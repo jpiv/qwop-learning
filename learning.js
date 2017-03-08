@@ -1,3 +1,4 @@
+var debug = false;
 class Synapse {
 	constructor(parentNeuron, childNeuron, lossFn, lossP) {
 		this.w = Math.random() - 0.5;
@@ -19,10 +20,9 @@ class Synapse {
 		// console.log(this.parent.output * this.w)
 		// const er = this.parent.output - (this.child.output - this.child.error);
 		// const error = this._loss(this.child.error, 1);
-		const er = this.child.error * this.w
 		// console.log(this.parent.output)
-		this.gradient = this._lossP(er, this.w, this.parent.sum, this.parent.output);
-		this.parent.updateError(er);
+		this.gradient = this._lossP(this.child.error, this.child.sum, this.parent.output);
+		this.parent.updateError(this.child.error * this.w);
 	}
 
 	gradientDescent(learnRate, momentum) {
@@ -42,6 +42,7 @@ class Neuron {
 		this.sum = 0;
 		this.error = 0;
 		this.output = 1;
+		this._errorSum = 0;
 		this._activation = activationFn;
 		this._activationP = activationPrime;
 		this._loss = lossFn;
@@ -58,6 +59,7 @@ class Neuron {
 		this.sum = 0;
 		this.output = 1;
 		this.error = 0;
+		this._errorSum = 0;
 	}
 
 	inputImpulse(value, activate=true) {
@@ -72,9 +74,15 @@ class Neuron {
 		return this.output;
 	}
 
-	updateError(error) {
+	setError(error) {
+		this._errorSum = error;	
+		this.error = this._errorSum;
+	}
+
+	updateError(error, out) {
 		log(this.id, 'update error', error, this.error)
-		this.error += error;
+		this._errorSum += error;
+		this.error = this._loss(this._errorSum, this.sum)
 	}
 
 	backpropagateError() {
@@ -110,6 +118,7 @@ class Network {
 	}
 
 	sendInput(inputs) {
+		this.reset()
 		var output = null;
 		if(inputs.length === this.inputNeurons.length) {
 			this._networkAction((neuron, layer, index) => {
@@ -121,7 +130,7 @@ class Network {
 		} else {
 			console.error('Invalid number of inputs');
 		}
-		console.log(output)
+		log('out', output)
 		return output;
 	}
 
@@ -133,20 +142,22 @@ class Network {
 	_backpropagate(trainingData) {
 		const { learnRate, momentum, set } = trainingData;
 		const errorRates = [];
-		set.forEach(item => {
+		set.forEach((item, x) => {
 			let actual = this.sendInput(item.inputs)
-			let error = this._loss(actual - item.ideal, 1);
+			let error = actual - item.ideal;
 			this._networkAction((neuron, layer, index) => {
 				if(this.outputNeurons.indexOf(neuron) === index && layer === this.network.length - 1) {
-					neuron.updateError(error);
+					neuron.setError(error);
 				}
 				neuron.backpropagateError();
 			}, true);
 			this._networkAction(n => n.gradientDescent(learnRate, momentum));
 			errorRates.push(error);
-			console.log((error.toFixed(2) * 100) + '%')
-			this.reset();
+			console.log((error.toFixed(5) * 100) + '%')
+			if(x > set.length - 10) debug = true;
 		});
+
+		console.log(this.sendInput([0, 0]))
 		return this._meanSquaredError(errorRates)
 	}
 
@@ -209,11 +220,11 @@ const linear = x => {
 	return x;
 };
 const linearPrime = x => 1;
-const loss = (e, w) => {
-	return 0.5 * Math.pow(e * w, 2);
+const loss = (e, o) => {
+	return e * sigmoid(o) * (1- sigmoid(o))
 };
-const lossP = (e, w, s, o) => {
-	return e * sigmoidPrime(s) * o
+const lossP = (childErr, childSum, parentOutput) => {
+	return childErr * sigmoidPrime(childSum) * parentOutput 
 	// return e * w * e;	
 };
 const makeTrainingSet = size => {
@@ -234,42 +245,35 @@ const makeTrainingSet = size => {
 		return { ideal, inputs };
 	}); 
 };
-var debug = true;
+
 const nets = Array.from(Array(1).keys(), () => new Network(layers, sigmoid, sigmoidPrime, loss, lossP));
-const set = makeTrainingSet(4000);
+const set = makeTrainingSet(1000000);
 // set.forEach(i => console.log(i))
 var best = {error: 14};
 nets.forEach((net, i) => { 
 	let error = net.train({
-		learnRate: 0.01,
-		momentum: 0.8,
+		learnRate: 0.35,
+		momentum: 0.2,
 		set
 	});
-	const out = net.sendInput([0, 0]).toFixed(2);
-	console.log('#' + (Number(i) + 1) + '/' + nets.length, 'in: 0, 0', 'out:', out, (error * 100).toFixed(2) + '%')
-	best = error < best.error ? {
-		'in': '00',
-		error,
-		out,
-		net
-	} : best;
-});	
+	
 	console.log(`
-	Error: ${best.error.toFixed(2) * 100}%
+	Error: ${error.toFixed(2) * 100}%
 	Results:
 		in: 0, 0
-		out: ${best.net.sendInput([0, 0])}
+		out: ${net.sendInput([0, 0])}
 
 		in: 0, 1
-		out: ${best.net.sendInput([0, 1])}
+		out: ${net.sendInput([0, 1])}
 
 		in: 1, 0
-		out: ${best.net.sendInput([1, 0])}
+		out: ${net.sendInput([1, 0])}
 
 		in: 1, 1
-		out: ${best.net.sendInput([1, 1])}
+		out: ${net.sendInput([1, 1])}
 
 	`)
+});	
 function log() {
 	if(debug)
 		console.log.apply(console, arguments)
